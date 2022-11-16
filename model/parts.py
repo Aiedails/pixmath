@@ -83,3 +83,56 @@ class TransitionBlock(BaseNN):
         o = self.conv(self.relu(self.norm(i)))
         o = self.pool(o)
         return o
+
+class CoverageAttention(BaseNN):
+    def __init__(self, a_channel, f_channel, hidden_dim, decoder_dim, conv_kernel, conv_padding, L):
+        """              |           |          |           |
+                         C           q          n'          n
+        A:          [L, C] --conv--> F: [L, q]
+        \\hat{s_t}: [n', ]
+        F:          [L, q]
+
+        a_1: [L, 1] - \\alpha_t1 
+        a_2: [L, 1] - \\alpha_t2 --> ca_t
+        a_3: [L, 1] - \\alpha_t3
+
+        \\alpha_ti = softmax(e_ti)
+        e_ti = v_att^T * (U_s * \\hat{s_t} +   U_a * a_i  +    U_f  * f_i  )
+        [1,1]= [1, n'] * ([n',n] * [n,1]  + [n',C] * [C,1] + [n',q] * [q,1])
+        => use the form X.dot(W). ignore all the transpose
+        [L,1]= ([L,n]*[n,n'] + [L,C]*[C,n'] + [L,q]*[q,n']) * [n',1]
+        """
+        super().__init__()
+        C, q, n_prim, n = a_channel, f_channel, hidden_dim, decoder_dim
+        
+        # origin implementation
+        # self.U_a = nn.Parameter(torch.empty((hidden_dim, a_channel)))
+        # self.U_f = nn.Parameter(torch.empty((hidden_dim, f_channel)))
+        # self.U_s = nn.Parameter(torch.empty(hidden_dim))
+        # nn.init.xavier_normal_(self.U_a)
+        # nn.init.xavier_normal_(self.U_f)
+        # nn.init.xavier_normal_(self.U_s.unsqueeze(0)) # need a 2D tensor.
+
+        self.conv = nn.Conv2d(1, q, kernel_size=conv_kernel, padding=conv_padding)
+
+        self.U_a = nn.Linear(C, n_prim, bias=False)
+        self.U_f = nn.Linear(q, n_prim, bias=False)
+        self.U_s = nn.Linear(n, n_prim, bias=False)
+        self.U_v = nn.Linear(n_prim, 1, bias=False)
+
+        self.alpha = None
+        self.L = L
+
+    def reset_alpha(self, batch_size):
+        self.alpha = torch.zeros(batch_size, 1, self.L)
+
+    def forward(self, i, hat_s_t):
+        B, C, H, W = i.shape
+        assert(C == 1)
+        F = self.conv(self.alpha).reshape(B, -1, H*W) # B, q, L
+        A = i.reshape(B, -1, H*W) # B, C, L
+        e = self.U_v( torch.tanh(self.U_a(A) + self.U_f(F) + self.U_s(hat_s_t)) )
+        self.alpha = torch.softmax(e, dim=1) # B, 1, L
+        c_At = (self.alpha * A).sum(2)
+        return c_At
+
