@@ -1,7 +1,8 @@
+from os import wait
 import torch
 import torch.nn as nn
 
-from .parts import BaseNN, DenseBlock, TransitionBlock
+from .parts import BaseNN, DenseBlock, TransitionBlock, CoverageAttention, Maxout
 from logger import variable_logger as logger
 log = logger(is_active=True)
 
@@ -55,3 +56,62 @@ class Encoder(BaseNN):
         o_A = self.trans2(o) # C, H, W //= 2
         o_A = self.block3_A(o_A)
         return (o_A, o_B)
+
+class Decoder(BaseNN):
+    """
+    ┌─ y_{t-1}─┐  ┌──┐         ┌─────────────────────────┐  ┌──┐
+    │          ├─►│G1├─►\\hat{s_t} ─l─►                  ├─►│G2├──► s_t
+    │  s_{t-1}─┘  └──┘           A ───► f_{catt} ─► c_t──┘  └──┘    │
+    │                            B ───►              │  ┌───────────┘
+    └─────────────────────────────────────────────┐E │l │l
+                                                  ▼  ▼  ▼
+                                                 maxout ──l──► softmax ──► y_t
+    """
+    def __init__(self, len_word_list:int, low_res_shape:tuple[int,int,int],
+                 high_res_shape:tuple[int,int,int], hidden_size:int = 256, # n
+                 embedding_dim:int = 256, attention_size:int = 512): # e, n_prim
+        """
+        y_{t-1}: [B, w] --e--> embedded: [B, e] --┐
+                                s_{t-1}: [B, n] --G1--> \\hat{s_t}: [B, n]
+                                 ┌---- \\hat{s_t}':[B,n'] <─┘l  |
+             [B,C+C'] :c_t <--f_catt-- A,B: [B,L,C],[B,4L,C']   |
+                        └─------------------------------------> G2 --> s_t:[B, n]
+        s_t: [B, n]
+        c_t: [B, C+C']
+        emb: [B, e]
+         s_t  *  W_s  +    c_t   * W_c      + emb
+        [B,n] * [n,e] + [B,C+C'] * [C+C',e] + [B,e] = [B,e]
+
+        """
+        super().__init__()
+        C,W,H = low_res_shape
+        _,_,C_prim= high_res_shape
+        e, n, n_prim = embedding_dim, hidden_size, attention_size
+
+        self.embedding = nn.Embedding(len_word_list, embedding_dim)
+        self.gru1 = nn.GRU(e, n, batch_first=True)
+        self.gru2 = nn.GRU(C+C_prim, n, batch_first=True)
+        self.W_s = nn.Linear(n, n_prim, bias=False)
+
+        q = 256
+        L = W * H
+        self.att1 = CoverageAttention(C, q, n_prim, L, 11, 5)
+        self.att2 = CoverageAttention(C_prim, q, n_prim, 4*L, 7, 3)
+
+        self.W_s = nn.Linear(n, e, bias=False)
+        self.W_c = nn.Linear(C+C_prim, e, bias=False)
+        self.W_o = nn.Linear(e, len_word_list, bias=False)
+        self.maxout = Maxout(2)
+
+    def forward(self, yt_prev, st_prev, low_res, high_res) -> tuple[torch.Tensor, torch.Tensor]:
+        embedded = self.embedding(yt_prev)
+        hat_s_t, _ = self.gru1(embedded, st_prev)
+        hat_s_t_prim = self.W_s(hat_s_t)
+        cA_t = self.att1(hat_s_t_prim, low_res)
+        cB_t = self.att2(hat_s_t_prim, high_res)
+        c_t = torch.cat((cA_t, cB_t), dim=1)
+        s_t = self.gru2(c_t, hat_s_t)
+        o = self.W_s(s_t) + self.W_c(c_t) + embedded
+        o = self.maxout(o)
+        o = self.W_o(o)
+        return o, s_t

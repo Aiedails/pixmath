@@ -85,16 +85,16 @@ class TransitionBlock(BaseNN):
         return o
 
 class CoverageAttention(BaseNN):
-    def __init__(self, a_channel, f_channel, hidden_dim, decoder_dim, conv_kernel, conv_padding, L):
-        """              |           |          |           |
-                         C           q          n'          n
-        A:          [L, C] --conv--> F: [L, q]
-        \\hat{s_t}: [n', ]
-        F:          [L, q]
+    def __init__(self, a_channel, f_channel, hidden_dim, L, conv_kernel, conv_padding):
+        """              |           |          |        |
+                         C           q          n'       L
+        A:          [B,L,C]
+        \\hat{s_t}: [B,n']
+        \\alpha:    [B,L,1] --reshape+conv--> F: [B,L,q]
 
-        a_1: [L, 1] - \\alpha_t1 
-        a_2: [L, 1] - \\alpha_t2 --> ca_t
-        a_3: [L, 1] - \\alpha_t3
+        a_1: [L, 1] -- \\alpha_t1 
+        a_2: [L, 1] -- \\alpha_t2 --> ca_t
+        a_3: [L, 1] -- \\alpha_t3
 
         \\alpha_ti = softmax(e_ti)
         e_ti = v_att^T * (U_s * \\hat{s_t} +   U_a * a_i  +    U_f  * f_i  )
@@ -103,8 +103,8 @@ class CoverageAttention(BaseNN):
         [L,1]= ([L,n]*[n,n'] + [L,C]*[C,n'] + [L,q]*[q,n']) * [n',1]
         """
         super().__init__()
-        C, q, n_prim, n = a_channel, f_channel, hidden_dim, decoder_dim
-        
+        C, q, n_prim = a_channel, f_channel, hidden_dim
+
         # origin implementation
         # self.U_a = nn.Parameter(torch.empty((hidden_dim, a_channel)))
         # self.U_f = nn.Parameter(torch.empty((hidden_dim, f_channel)))
@@ -117,7 +117,6 @@ class CoverageAttention(BaseNN):
 
         self.U_a = nn.Linear(C, n_prim, bias=False)
         self.U_f = nn.Linear(q, n_prim, bias=False)
-        self.U_s = nn.Linear(n, n_prim, bias=False)
         self.U_v = nn.Linear(n_prim, 1, bias=False)
 
         self.alpha = None
@@ -126,13 +125,23 @@ class CoverageAttention(BaseNN):
     def reset_alpha(self, batch_size):
         self.alpha = torch.zeros(batch_size, 1, self.L)
 
-    def forward(self, i, hat_s_t):
+    def forward(self, i, hat_s_t_prim_converted):
         B, C, H, W = i.shape
         assert(C == 1)
-        F = self.conv(self.alpha).reshape(B, -1, H*W) # B, q, L
+        F = self.conv(self.alpha.reshape(B,1,H,W)).reshape(B, -1, H*W) # B, q, L
         A = i.reshape(B, -1, H*W) # B, C, L
-        e = self.U_v( torch.tanh(self.U_a(A) + self.U_f(F) + self.U_s(hat_s_t)) )
+        e = self.U_v( torch.tanh(self.U_a(A) + self.U_f(F) + (hat_s_t_prim_converted)) )
         self.alpha = torch.softmax(e, dim=1) # B, 1, L
         c_At = (self.alpha * A).sum(2)
         return c_At
+
+class Maxout(BaseNN):
+    def __init__(self, pool_size):
+        super().__init__()
+        self.pool_size = pool_size
+    def forward(self, i):
+        [*shape, last] = i.size()
+        out = i.view(*shape, last // self.pool_size, self.pool_size)
+        out, _ = out.max(-1)
+        return out
 
