@@ -79,8 +79,8 @@ def encode_truth(truth, token_to_id):
             truth_tokens.append(index)
             remaining_truth = remaining_truth[tok_len:].lstrip()
         except ValueError:
-            print(truth)
-            print(remaining_truth)
+            # print(truth)
+            # print(remaining_truth)
             raise Exception("Truth contains unknown token")
     return truth_tokens
 
@@ -129,7 +129,7 @@ class dataset(Dataset):
                           torchvision.io.ImageReadMode.GRAY) / 255.0).to(self.device)
         data["img"] = img
         data["truth"] = self.truth[index]
-        print(self.truth[index])
+        # print(self.truth[index])
         return data
 
     def __len__(self):

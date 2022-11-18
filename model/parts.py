@@ -88,9 +88,9 @@ class CoverageAttention(BaseNN):
     def __init__(self, a_channel, f_channel, hidden_dim, L, conv_kernel, conv_padding):
         """              |           |          |        |
                          C           q          n'       L
-        A:          [B,L,C]
+        A:          [B,C,L]
         \\hat{s_t}: [B,n']
-        \\alpha:    [B,L,1] --reshape+conv--> F: [B,L,q]
+        \\alpha:    [B,1,L] --reshape+conv--> F: [B,q,L]
 
         a_1: [L, 1] -- \\alpha_t1 
         a_2: [L, 1] -- \\alpha_t2 --> ca_t
@@ -104,6 +104,9 @@ class CoverageAttention(BaseNN):
         """
         super().__init__()
         C, q, n_prim = a_channel, f_channel, hidden_dim
+        self.q = q
+        self.C = C
+        self.n_prim = n_prim
 
         # origin implementation
         # self.U_a = nn.Parameter(torch.empty((hidden_dim, a_channel)))
@@ -124,16 +127,30 @@ class CoverageAttention(BaseNN):
 
     def reset_alpha(self, batch_size):
         self.alpha = torch.zeros(batch_size, 1, self.L)
+        log.log("alpha shape", self.alpha.shape)
 
     def forward(self, i, hat_s_t_prim_converted):
         B, C, H, W = i.shape
-        assert(C == 1)
+        if (self.alpha == None):
+            self.reset_alpha(B)
+        log.log("i.shape", i.shape)
         F = self.conv(self.alpha.reshape(B,1,H,W)).reshape(B, -1, H*W) # B, q, L
-        A = i.reshape(B, -1, H*W) # B, C, L
-        e = self.U_v( torch.tanh(self.U_a(A) + self.U_f(F) + (hat_s_t_prim_converted)) )
-        self.alpha = torch.softmax(e, dim=1) # B, 1, L
-        c_At = (self.alpha * A).sum(2)
-        return c_At
+        log.log("F.shape", F.shape)
+        assert(F.shape[1] == self.q)
+        A = i.reshape(B, -1, H*W).permute(0, 2, 1) # B, C, L -> B, L, C
+        # log.log("hat_s_t_prim_converted",hat_s_t_prim_converted.shape)
+        log.log("A.shape", A.shape)
+        print(self.C, self.n_prim)
+        res_a = self.U_a(A) # B, L, n'
+        log.log("res_a.shape", res_a.shape)
+        res_s = hat_s_t_prim_converted.unsqueeze(1).expand(B, self.L, self.n_prim) # B, n' -> B, L, n'
+        F = F.permute(0, 2, 1) # B, q, L -> B, L, q
+        res_f = self.U_f(F) # B, L, n'
+        e = self.U_v( res_a + res_s + res_f ) # B, L, 1
+        self.alpha = torch.softmax(e.permute(0, 2, 1), dim=1) # B, 1, L
+        c_At = (self.alpha * A.permute(0, 2, 1)).sum(2) # B, 1, L * B, C, L
+        log.log("c_At.shape", c_At.shape)
+        return c_At # B, L
 
 class Maxout(BaseNN):
     def __init__(self, pool_size):

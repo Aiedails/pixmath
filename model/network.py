@@ -30,7 +30,7 @@ class Encoder(BaseNN):
         self.block3_B = nn.Sequential(   # cause the B part does not down sampling,
             nn.BatchNorm2d(num_feature), # we manully add a batchnorm and relu here,
             nn.ReLU(inplace=True),       # together with a denseblock.
-            DenseBlock(num_feature, growth_rate, num_bn, dropout_rate)
+            DenseBlock(num_feature, growth_rate, num_bn // 2, dropout_rate)
         )
 
         self.trans2 = TransitionBlock(num_feature, 2) # now we cut the channel for A part
@@ -71,8 +71,8 @@ class Decoder(BaseNN):
                  high_res_shape:tuple[int,int,int], hidden_size:int = 256, # n
                  embedding_dim:int = 256, attention_size:int = 512): # e, n_prim
         """
-        y_{t-1}: [B, w] --e--> embedded: [B, e] --┐
-                                s_{t-1}: [B, n] --G1--> \\hat{s_t}: [B, n]
+        y_{t-1}: [B, 1] --e--> embedded: [B,1,e] --┐
+                                s_{t-1}: [1,B,n] --G1--> \\hat{s_t}: [B,1,n]
                                  ┌---- \\hat{s_t}':[B,n'] <─┘l  |
              [B,C+C'] :c_t <--f_catt-- A,B: [B,L,C],[B,4L,C']   |
                         └─------------------------------------> G2 --> s_t:[B, n]
@@ -85,33 +85,57 @@ class Decoder(BaseNN):
         """
         super().__init__()
         C,W,H = low_res_shape
-        _,_,C_prim= high_res_shape
+        C_prim, W_B, H_B = high_res_shape
+        log.log("A.shape", low_res_shape)
+        log.log("B.shape", high_res_shape)
         e, n, n_prim = embedding_dim, hidden_size, attention_size
+        print("n, n' = ", n, n_prim)
+        self.n = n
 
         self.embedding = nn.Embedding(len_word_list, embedding_dim)
         self.gru1 = nn.GRU(e, n, batch_first=True)
         self.gru2 = nn.GRU(C+C_prim, n, batch_first=True)
-        self.W_s = nn.Linear(n, n_prim, bias=False)
+        self.W_nn_prim = nn.Linear(n, n_prim, bias=False)
 
         q = 256
         L = W * H
+        L_prim = W_B * H_B
+        log.log("L", L)
+        log.log("L_prim", L_prim)
         self.att1 = CoverageAttention(C, q, n_prim, L, 11, 5)
-        self.att2 = CoverageAttention(C_prim, q, n_prim, 4*L, 7, 3)
+        self.att2 = CoverageAttention(C_prim, q, n_prim, L_prim, 7, 3)
 
         self.W_s = nn.Linear(n, e, bias=False)
         self.W_c = nn.Linear(C+C_prim, e, bias=False)
-        self.W_o = nn.Linear(e, len_word_list, bias=False)
+        self.W_o = nn.Linear(e // 2, len_word_list, bias=False)
         self.maxout = Maxout(2)
 
+    def init_hidden(self, batch_size):
+        return torch.zeros((1, batch_size, self.n))
+    def reset(self, batch_size):
+        self.att1.reset_alpha(batch_size)
+        self.att2.reset_alpha(batch_size)
+
     def forward(self, yt_prev, st_prev, low_res, high_res) -> tuple[torch.Tensor, torch.Tensor]:
+        log.log("yt_prev", yt_prev.shape)
+        log.log("st_prev", st_prev.shape)
         embedded = self.embedding(yt_prev)
+        log.log("embedded", embedded.shape)
         hat_s_t, _ = self.gru1(embedded, st_prev)
-        hat_s_t_prim = self.W_s(hat_s_t)
-        cA_t = self.att1(hat_s_t_prim, low_res)
-        cB_t = self.att2(hat_s_t_prim, high_res)
+        log.log("hat_s_t", hat_s_t.shape)
+        hat_s_t_prim = self.W_nn_prim(hat_s_t.squeeze(1))
+        log.log("hat_s_t_prim", hat_s_t_prim.shape)
+        cA_t = self.att1(low_res, hat_s_t_prim)
+        cB_t = self.att2(high_res, hat_s_t_prim)
+        log.log("cA_t", cA_t.shape)
+        log.log("cB_t", cB_t.shape)
         c_t = torch.cat((cA_t, cB_t), dim=1)
-        s_t = self.gru2(c_t, hat_s_t)
+        log.log("c_t", c_t.shape)
+        s_t, _ = self.gru2(c_t.unsqueeze(1), hat_s_t.permute(1, 0, 2)) # B, 1, n -> 1, B, n
+        log.log("s_t", s_t.shape)
         o = self.W_s(s_t) + self.W_c(c_t) + embedded
+        log.log("o.shape", o.shape)
         o = self.maxout(o)
+        log.log("o.shape", o.shape)
         o = self.W_o(o)
         return o, s_t
