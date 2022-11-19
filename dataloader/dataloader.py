@@ -109,6 +109,9 @@ class dataset(Dataset):
         self.device = device
         self.token_to_id, self.id_to_token = load_vocab(tokens_file)
 
+        temp_img_matches = open("./data/100_200_30_60_img_number.txt", "r").read().splitlines()
+        self.temp_file_matches = temp_img_matches
+
         with open(gt_file, "r") as fd:
             reader = csv.reader(fd, delimiter="\t")
             self.truth = [{
@@ -128,7 +131,9 @@ class dataset(Dataset):
         img = (read_image(os.path.join(self.path, self.filenames[index]),
                           torchvision.io.ImageReadMode.GRAY) / 255.0).to(self.device)
         data["img"] = img
-        data["truth"] = self.truth[index]
+        # data["truth"] = self.truth[index]
+        data["truth"] = self.truth[int(self.temp_file_matches[index])]
+        # print(self.filenames[index], int(self.temp_file_matches[index]))
         # print(self.truth[index])
         return data
 

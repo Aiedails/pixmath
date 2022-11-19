@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from logger import variable_logger as logger
 log = logger(is_active=True)
+log.is_active = False
 
 class BaseNN(nn.Module):
     """
@@ -18,7 +19,9 @@ class BaseNN(nn.Module):
     def forward(self, i: torch.Tensor): return i
     def save(self, path: str):
         torch.save(self.state_dict(), path)
-
+    def auto_save(self, prefix:str, epoch: int, iter: int): # name-epoch-{epoch}-iter-{iter}
+        save_name = prefix + "-epoch-" + str(epoch) + "-iter-" + str(iter)
+        self.save(save_name)
     def load(self, path: str):
         self.load_state_dict(torch.load(path))
     def auto_load(self, ckpt_dir: str, prefix: str):
@@ -28,10 +31,14 @@ class BaseNN(nn.Module):
             ckpt_name = ckpt_name.split("-")
             if(ckpt_name[0] == prefix):
                 all_ckpt.append( (ckpt_name, ckpt_name[2], ckpt_name[4]) ) # name-epoch-{epoch}-iter-{iter}
+        if (all_ckpt == []):
+            print("no checkpoint founded.")
+            return 0, 0
         res = sorted(all_ckpt, key = lambda x: (x[1], x[2]))
         newest = '-'.join(res[-1][0])
         print("loading newest checkpoints " + os.path.join(ckpt_dir, newest))
         self.load(os.path.join(ckpt_dir, newest))
+        return res[-1][1], res[-1][2]
 
 class BottleneckBlock(BaseNN):
     """
@@ -140,14 +147,14 @@ class CoverageAttention(BaseNN):
         A = i.reshape(B, -1, H*W).permute(0, 2, 1) # B, C, L -> B, L, C
         # log.log("hat_s_t_prim_converted",hat_s_t_prim_converted.shape)
         log.log("A.shape", A.shape)
-        print(self.C, self.n_prim)
+        # print(self.C, self.n_prim)
         res_a = self.U_a(A) # B, L, n'
         log.log("res_a.shape", res_a.shape)
         res_s = hat_s_t_prim_converted.unsqueeze(1).expand(B, self.L, self.n_prim) # B, n' -> B, L, n'
         F = F.permute(0, 2, 1) # B, q, L -> B, L, q
         res_f = self.U_f(F) # B, L, n'
         e = self.U_v( res_a + res_s + res_f ) # B, L, 1
-        self.alpha = torch.softmax(e.permute(0, 2, 1), dim=1) # B, 1, L
+        self.alpha = torch.softmax(e.permute(0, 2, 1), dim=1).detach() # B, 1, L
         c_At = (self.alpha * A.permute(0, 2, 1)).sum(2) # B, 1, L * B, C, L
         log.log("c_At.shape", c_At.shape)
         return c_At # B, L

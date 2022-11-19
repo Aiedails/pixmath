@@ -5,6 +5,7 @@ import torch.nn as nn
 from .parts import BaseNN, DenseBlock, TransitionBlock, CoverageAttention, Maxout
 from logger import variable_logger as logger
 log = logger(is_active=True)
+log.is_active = False
 
 class Encoder(BaseNN):
     def __init__(self, img_channel:int=1, conv0_out_channel:int=48, num_bn:int=16,
@@ -133,9 +134,10 @@ class Decoder(BaseNN):
         log.log("c_t", c_t.shape)
         s_t, _ = self.gru2(c_t.unsqueeze(1), hat_s_t.permute(1, 0, 2)) # B, 1, n -> 1, B, n
         log.log("s_t", s_t.shape)
-        o = self.W_s(s_t) + self.W_c(c_t) + embedded
+        o = self.W_s(s_t) + self.W_c(c_t.unsqueeze(1)) + embedded
         log.log("o.shape", o.shape)
         o = self.maxout(o)
         log.log("o.shape", o.shape)
-        o = self.W_o(o)
-        return o, s_t
+        o = self.W_o(o).squeeze(1)
+        log.log("o.shape", o.shape)
+        return o, s_t.permute(1, 0, 2) # [B, e], [1, B, n]
