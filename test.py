@@ -9,6 +9,7 @@ from logger import variable_logger
 from model.network import Encoder, Decoder
 from dataloader.dataloader import dataset, collate_batch, START, PAD
 
+# device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 path = "./data/imgs/converted/"
 ckpt_path = "./checkpoints/"
