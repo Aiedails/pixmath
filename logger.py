@@ -15,21 +15,14 @@ class logger():
         self.writer = SummaryWriter(log_dir=path)
     def log(self, name:str, loss:float, n_iter:int):
         self.writer.add_scalar(name, loss, global_step = n_iter)
-    
-    # 使用下面的函数来导入loss 如果需要acc 创建新的函数即可
-    def log_train_loss(self, loss:float, n_iter:int):
-        self.log('train_loss', loss, n_iter)
-    def log_test_loss(self, loss:float, n_iter:int):
-        self.log('test_loss', loss, n_iter)
-        
-    def log_image(self, name:str, image:torch.Tensor, dataformats='CHW'):
-        self.writer.add_image(name, image, dataformats=dataformats)
-        
-    # 使用下面的函数来导入图片
-    def log_formula_image(self, img):
-        img_array = np.array(img)
-        self.log_image('formula_image', img_array, dataformats='HWC')
-    
+    def log_image(self, name:str, image:torch.Tensor, dataformats="CHW"):
+        self.writer.add_image(name, np.array(image), dataformats=dataformats)
+    def log_image_batched(self, name:str, image:torch.Tensor, img_formats="CHW"):
+        # TODO: deal with the condition of [B,C,H,W]. log B images into a grid
+        pass
+    def log_image_list(self, name:str, image:list[torch.Tensor], img_formats="CHW"):
+        # TODO: deal with the condition of a list of [C,H,W]. log all images into a grid
+        pass
 
 class variable_logger():
     def __init__(self, is_active=True):
