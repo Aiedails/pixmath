@@ -6,14 +6,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.transforms as transforms
+import numpy as np
 
 from torch.utils.tensorboard.writer import SummaryWriter
 
 class logger():
     def __init__(self, path):
-        self.writer = SummaryWriter(path)
+        self.writer = SummaryWriter(log_dir=path)
     def log(self, name:str, loss:float, n_iter:int):
         self.writer.add_scalar(name, loss, global_step = n_iter)
+    def log_image(self, name:str, image:torch.Tensor, dataformats="CHW"):
+        self.writer.add_image(name, np.array(image), dataformats=dataformats)
+    def log_image_batched(self, name:str, image:torch.Tensor, img_formats="CHW"):
+        # TODO: deal with the condition of [B,C,H,W]. log B images into a grid
+        pass
+    def log_image_list(self, name:str, image:list[torch.Tensor], img_formats="CHW"):
+        # TODO: deal with the condition of a list of [C,H,W]. log all images into a grid
+        pass
 
 class variable_logger():
     def __init__(self, is_active=True):
