@@ -125,8 +125,44 @@ def load_checkpoint(path, cuda=use_cuda):
 
 def evaluate(enc, dec, data_loader, device, checkpoint):
 
-    for d in data_loader:
+    for data in data_loader:
 
+        # Copied from test.py
+        img = data["img"]
+        res = data["truth"]
+        expected = res["encoded"].to(device)
+        expected[expected == -1] = data_loader.dataset.token_to_id[PAD]
+
+        curr_batch_size = len(img)
+        batch_max_len = expected.size(1)
+
+        hidden = dec.init_hidden(batch_size).to(device)
+        sequence = torch.full(
+            (curr_batch_size, 1),
+            data_loader.dataset.token_to_id[START],
+            dtype=torch.long,
+            device=device,
+        )
+
+        enc_low_res, enc_high_res = enc(img)
+
+        #print(enc_low_res.shape)
+
+        # decoded_values = []
+        # for i in range(batch_max_len - 1):
+        #     previous = expected[:, i] # on all batch
+        #     previous = previous.view(-1, 1)
+        #     out, hidden = dec(previous, hidden, A, B)
+        #     hidden = hidden.detach()
+        #     _, top1_id = torch.topk(out, 1) # use hard max on rnn selection
+        #     sequence = torch.cat((sequence, top1_id), dim=1)
+        #     decoded_values.append(out)
+        # # print(sequence)
+        # # exit(0)
+        # decoded_values = torch.stack(decoded_values, dim=2).to(device)
+        # # print(decoded_values.shape)
+        # # print(expected.shape)
+        # loss = criterion(decoded_values, expected[:, 1:].contiguous())
 
 
         pass
