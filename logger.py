@@ -16,13 +16,18 @@ class logger():
     def log(self, name:str, loss:float, n_iter:int):
         self.writer.add_scalar(name, loss, global_step = n_iter)
     def log_image(self, name:str, image:torch.Tensor, dataformats="CHW"):
-        self.writer.add_image(name, np.array(image), dataformats=dataformats)
+        self.writer.add_image(name, np.array(image.detach().cpu()), dataformats=dataformats)
     def log_image_batched(self, name:str, image:torch.Tensor, img_formats="CHW"):
         # TODO: deal with the condition of [B,C,H,W]. log B images into a grid
-        pass
+        imgs = np.array(image.detach().cpu())
+        for i in range(imgs.shape[0]):
+            self.writer.add_image(name + "["+str(i)+"]", imgs[i], img_formats)
     def log_image_list(self, name:str, image:list[torch.Tensor], img_formats="CHW"):
         # TODO: deal with the condition of a list of [C,H,W]. log all images into a grid
         pass
+    def log_image_batched(self, name:str, text:str, n_iter:int):
+        self.writer.add_text(name, text)
+
 
 class variable_logger():
     def __init__(self, is_active=True):

@@ -109,19 +109,20 @@ class dataset(Dataset):
         self.device = device
         self.token_to_id, self.id_to_token = load_vocab(tokens_file)
 
-        temp_img_matches = open("./data/100_200_30_60_img_number.txt", "r").read().splitlines()
+        temp_img_matches = open("./data/100_400_30_60_img_number.txt", "r").read().splitlines()
         self.temp_file_matches = temp_img_matches
 
         with open(gt_file, "r") as fd:
             reader = csv.reader(fd, delimiter="\t")
             self.truth = [{
+                # "filename": self.filenames[idx],
                 "text": truth[0],
                 "encoded": [
                     self.token_to_id[START],
                     *encode_truth(truth[0], self.token_to_id),
                     self.token_to_id[END],
                 ],
-            } for truth in reader
+            } for idx, truth in enumerate(reader)
             ]
 
         # self.transforms = ToTensor()

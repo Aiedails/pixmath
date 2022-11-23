@@ -70,7 +70,8 @@ class Decoder(BaseNN):
     """
     def __init__(self, len_word_list:int, low_res_shape:tuple[int,int,int],
                  high_res_shape:tuple[int,int,int], hidden_size:int = 256, # n
-                 embedding_dim:int = 256, attention_size:int = 512): # e, n_prim
+                 embedding_dim:int = 256, attention_size:int = 512,  # e, n_prim
+                 device:str='cpu'):
         """
         y_{t-1}: [B, 1] --e--> embedded: [B,1,e] --┐
                                 s_{t-1}: [1,B,n] --G1--> \\hat{s_t}: [B,1,n]
@@ -103,13 +104,15 @@ class Decoder(BaseNN):
         L_prim = W_B * H_B
         log.log("L", L)
         log.log("L_prim", L_prim)
-        self.att1 = CoverageAttention(C, q, n_prim, L, 11, 5)
-        self.att2 = CoverageAttention(C_prim, q, n_prim, L_prim, 7, 3)
+        self.att1 = CoverageAttention(C, q, n_prim, L, 11, 5, device)
+        self.att2 = CoverageAttention(C_prim, q, n_prim, L_prim, 7, 3, device)
 
         self.W_s = nn.Linear(n, e, bias=False)
         self.W_c = nn.Linear(C+C_prim, e, bias=False)
         self.W_o = nn.Linear(e // 2, len_word_list, bias=False)
         self.maxout = Maxout(2)
+
+        self.device = device
 
     def init_hidden(self, batch_size):
         return torch.zeros((1, batch_size, self.n))

@@ -30,7 +30,7 @@ class BaseNN(nn.Module):
         for ckpt_name in self.ckpts:
             ckpt_name = ckpt_name.split("-")
             if(ckpt_name[0] == prefix):
-                all_ckpt.append( (ckpt_name, ckpt_name[2], ckpt_name[4]) ) # name-epoch-{epoch}-iter-{iter}
+                all_ckpt.append( (ckpt_name, int(ckpt_name[2]), int(ckpt_name[4])) ) # name-epoch-{epoch}-iter-{iter}
         if (all_ckpt == []):
             print("no checkpoint founded.")
             return 0, 0
@@ -38,7 +38,7 @@ class BaseNN(nn.Module):
         newest = '-'.join(res[-1][0])
         print("loading newest checkpoints " + os.path.join(ckpt_dir, newest))
         self.load(os.path.join(ckpt_dir, newest))
-        return res[-1][1], res[-1][2]
+        return int(res[-1][1]), int(res[-1][2])
 
 class BottleneckBlock(BaseNN):
     """
@@ -92,7 +92,7 @@ class TransitionBlock(BaseNN):
         return o
 
 class CoverageAttention(BaseNN):
-    def __init__(self, a_channel, f_channel, hidden_dim, L, conv_kernel, conv_padding):
+    def __init__(self, a_channel, f_channel, hidden_dim, L, conv_kernel, conv_padding, device):
         """              |           |          |        |
                          C           q          n'       L
         A:          [B,C,L]
@@ -130,10 +130,11 @@ class CoverageAttention(BaseNN):
         self.U_v = nn.Linear(n_prim, 1, bias=False)
 
         self.alpha = None
+        self.device = device
         self.L = L
 
     def reset_alpha(self, batch_size):
-        self.alpha = torch.zeros(batch_size, 1, self.L)
+        self.alpha = torch.zeros(batch_size, 1, self.L).to(self.device)
         log.log("alpha shape", self.alpha.shape)
 
     def forward(self, i, hat_s_t_prim_converted):
