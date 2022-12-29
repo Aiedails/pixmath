@@ -79,10 +79,11 @@ def encode_truth(truth, token_to_id):
             truth_tokens.append(index)
             remaining_truth = remaining_truth[tok_len:].lstrip()
         except ValueError:
-            # print(truth)
-            # print(remaining_truth)
+            print(truth)
+            print(remaining_truth)
             raise Exception("Truth contains unknown token")
     return truth_tokens
+
 
 def collate_batch(data):
     max_len = max([len(d["truth"]["encoded"]) for d in data])
@@ -92,7 +93,8 @@ def collate_batch(data):
         for d in data
     ]
     return {
-        "img": torch.stack([d["img"] for d in data], dim=0),
+        "path": [d["path"] for d in data],
+        "image": torch.stack([d["image"] for d in data], dim=0),
         "truth": {
             "text": [d["truth"]["text"] for d in data],
             "encoded": torch.tensor(padded_encoded),
@@ -100,43 +102,42 @@ def collate_batch(data):
     }
 
 
-
 class dataset(Dataset):
     def __init__(self, path: str, tokens_file: str, gt_file: str, device="cpu"):
         self.path = path
-        self.filenames = os.listdir(path)
         self.images = []
         self.device = device
         self.token_to_id, self.id_to_token = load_vocab(tokens_file)
 
-        temp_img_matches = open("./data/100_400_30_60_img_number.txt", "r").read().splitlines()
-        self.temp_file_matches = temp_img_matches
-
         with open(gt_file, "r") as fd:
             reader = csv.reader(fd, delimiter="\t")
-            self.truth = [{
-                # "filename": self.filenames[idx],
-                "text": truth[0],
-                "encoded": [
-                    self.token_to_id[START],
-                    *encode_truth(truth[0], self.token_to_id),
-                    self.token_to_id[END],
-                ],
-            } for idx, truth in enumerate(reader)
+            self.truth = [
+                {
+                    "path": os.path.join(path, p + ".png"),
+                    "truth": {
+                        "text": truth,
+                        "encoded": [
+                            self.token_to_id[START],
+                            *encode_truth(truth, self.token_to_id),
+                            self.token_to_id[END],
+                        ],
+                    },
+                }
+                for p, truth in reader
             ]
 
         # self.transforms = ToTensor()
 
     def __getitem__(self, index):
         data = {}
-        img = (read_image(os.path.join(self.path, self.filenames[index]),
+        img = (read_image(self.truth[index]["path"],
                           torchvision.io.ImageReadMode.GRAY) / 255.0).to(self.device)
-        data["img"] = img
         # data["truth"] = self.truth[index]
-        data["truth"] = self.truth[int(self.temp_file_matches[index])]
+        data["truth"] = self.truth[index]["truth"]
+        data["path"] = self.truth[index]["path"]
         # print(self.filenames[index], int(self.temp_file_matches[index]))
         # print(self.truth[index])
-        return data
+        return {"path": data["path"], "image": img, "truth": data["truth"]}
 
     def __len__(self):
-        return len(self.filenames)
+        return len(self.truth)

@@ -14,14 +14,14 @@ writer = logger("runs/test")
 
 # device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cuda" 
-path = "./data/imgs/converted/" 
+path = "./data/train/" 
 ckpt_path = "./checkpoints/"
 batch_size = 4
 max_epoch = 20
 save_every = 200
 teacher_forcing_ratio = 0.8
 start_epoch, start_iter = 0, 0
-ds = dataset(path, tokens_file="./data/tokens.tsv", gt_file="./data/data.txt") 
+ds = dataset(path, tokens_file="./data/tokens.tsv", gt_file="./data/groundtruth_train.tsv", device=device)
 train_dl = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=collate_batch, drop_last=True)
 len_word_list = len(ds.token_to_id)
 
@@ -29,7 +29,7 @@ len_word_list = len(ds.token_to_id)
 grad_norms = []
 max_grad_norm = 5.0
 
-input_size = (400, 60)
+input_size = (512, 128)
 low_res_shape = (684, input_size[0] // 16, input_size[1] // 16)
 high_res_shape = (792, input_size[0] // 8, input_size[1] // 8)
 
@@ -40,13 +40,13 @@ dec = Decoder(len_word_list, low_res_shape, high_res_shape, device=device).to(de
 # _, _ = dec.auto_load(ckpt_path, "decoder")
 
 criterion = nn.CrossEntropyLoss().to(device)
-optimizer = torch.optim.Adam(list(enc.parameters()) + list(dec.parameters()), lr=1e-3, betas=(0.9, 0.999))
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.98)
+optimizer = torch.optim.Adam(list(enc.parameters()) + list(dec.parameters()), lr=1e-3, betas=(0.5, 0.999))
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
 
 
 for epoch in range(start_epoch, max_epoch):
     for idx, data in enumerate(train_dl):
-        img = data["img"].to(device)
+        img = data["image"].to(device)
         res = data["truth"]
         expected = res["encoded"].to(device)
         expected[expected == -1] = train_dl.dataset.token_to_id[PAD]
@@ -95,7 +95,7 @@ for epoch in range(start_epoch, max_epoch):
             optim_params, max_norm=max_grad_norm
         )
         grad_norms.append(grad_norm)
-        print(grad_norms)
+        # print(grad_norms)
         optimizer.step()
 
         correct_symbols = torch.sum(sequence == expected, dim=(0, 1)).item()

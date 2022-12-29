@@ -43,7 +43,7 @@ class BaseNN(nn.Module):
 class BottleneckBlock(BaseNN):
     """
     The Bottleneck Block. Each contains a 1x1 conv2d and a 3x3 one.
-    in_channel -> 4 * grouth_rate -> grouth_rate
+    in_channel -> 4 * grouth_rate -> cat[in_channel, grouth_rate]
     """
     def __init__(self, in_channel: int, growth_rate: int, dropout_rate:float=0.2):
         super().__init__()

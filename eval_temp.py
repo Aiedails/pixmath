@@ -11,12 +11,12 @@ from dataloader.dataloader import dataset, collate_batch, START, PAD
 
 device = "cpu"
 ckpt_path = "./checkpoints/"
-batch_size = 4
+batch_size = 1
 max_epoch = 4
 save_every = 200
 
 
-input_size = (200, 60)
+input_size = (400, 60)
 low_res_shape = (684, input_size[0] // 16, input_size[1] // 16)
 high_res_shape = (792, input_size[0] // 8, input_size[1] // 8)
 # TODO: like train.py, choose some data and evaluate them

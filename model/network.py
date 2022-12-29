@@ -121,26 +121,51 @@ class Decoder(BaseNN):
         self.att2.reset_alpha(batch_size)
 
     def forward(self, yt_prev, st_prev, low_res, high_res) -> tuple[torch.Tensor, torch.Tensor]:
-        log.log("yt_prev", yt_prev.shape)
-        log.log("st_prev", st_prev.shape)
         embedded = self.embedding(yt_prev)
-        log.log("embedded", embedded.shape)
         hat_s_t, _ = self.gru1(embedded, st_prev)
-        log.log("hat_s_t", hat_s_t.shape)
         hat_s_t_prim = self.W_nn_prim(hat_s_t.squeeze(1))
-        log.log("hat_s_t_prim", hat_s_t_prim.shape)
         cA_t = self.att1(low_res, hat_s_t_prim)
         cB_t = self.att2(high_res, hat_s_t_prim)
-        log.log("cA_t", cA_t.shape)
-        log.log("cB_t", cB_t.shape)
         c_t = torch.cat((cA_t, cB_t), dim=1)
-        log.log("c_t", c_t.shape)
         s_t, _ = self.gru2(c_t.unsqueeze(1), hat_s_t.permute(1, 0, 2)) # B, 1, n -> 1, B, n
-        log.log("s_t", s_t.shape)
         o = self.W_s(s_t) + self.W_c(c_t.unsqueeze(1)) + embedded
-        log.log("o.shape", o.shape)
         o = self.maxout(o)
-        log.log("o.shape", o.shape)
         o = self.W_o(o).squeeze(1)
-        log.log("o.shape", o.shape)
         return o, s_t.permute(1, 0, 2) # [B, e], [1, B, n]
+
+class Auto_E(BaseNN):
+    def __init__(self, in_channel:int=1, oc1:int=684, oc2:int=792):
+        super().__init__()                                #   C,   W,   H
+        self.conv1 = nn.Conv2d(in_channel,  64, 3, 2, 1)  #   1, 512, 128 ->  64, 256, 64   1/2
+        self.conv2 = nn.Conv2d(        64, 128, 3, 2, 1)  #  64, 256,  64 -> 128, 128, 32   1/4
+        self.conv3 = nn.Conv2d(       128, 256, 3, 2, 1)  # 128, 128,  32 -> 256,  64, 16   1/8
+        self.conv4 = nn.Conv2d(       256, 512, 3, 2, 1)  # 256,  64,  16 -> 512,  32,  8   1/16
+
+        self.conv_re1 = nn.Conv2d(    256, oc1, 3, 1, 1)
+        self.conv_re2 = nn.Conv2d(    512, oc2, 3, 1, 1)
+    def forward(self, i) -> tuple[torch.Tensor, torch.Tensor]:
+        x = self.conv1(i)
+        x = self.conv2(x)
+        o1 = self.conv3(x)
+        o2 = self.conv_re2(self.conv4(o1))
+        o1 = self.conv_re1(o1)
+        return (o1, o2)
+
+class Auto_D(BaseNN):
+    def __init__(self, oc1:int=684, oc2:int=792):
+        super().__init__()
+        self.deconv_re1 = nn.ConvTranspose2d(oc1, 256, 3, 1, 1)
+        self.deconv_re2 = nn.ConvTranspose2d(oc2, 512, 3, 1, 1)
+        self.deconv4 = nn.ConvTranspose2d(512, 256, 3, 2, 1, output_padding=1)
+        self.deconv3 = nn.ConvTranspose2d(256, 128, 3, 2, 1, output_padding=1)
+        self.deconv2 = nn.ConvTranspose2d(128,  64, 3, 2, 1, output_padding=1)
+        self.deconv1 = nn.ConvTranspose2d( 64,   1, 3, 2, 1, output_padding=1)
+    def forward(self, i) -> tuple[torch.Tensor, torch.Tensor]:
+        x1 = self.deconv_re1(i[0])
+        x2 = self.deconv_re2(i[1])
+        x = self.deconv4(x2)
+        delta = x - x1
+        x = self.deconv3(x)  # x & x1 should be similar
+        x = self.deconv2(x)
+        x = self.deconv1(x)
+        return (x, delta)
